@@ -1,6 +1,6 @@
 name: DeciLabel
 author: Evan Gong
-description: Add evidence-supported GitHub issue and pull request labels with typed Decisions APIs.
+description: Automatically add evidence-supported labels to GitHub Issues and pull requests with Jev or Microsoft Decision 1.
 branding:
   icon: tag
   color: blue

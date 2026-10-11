@@ -4,7 +4,22 @@ DeciLabel classifies GitHub Issues and pull requests with a typed Decisions API,
 
 ## Quick start
 
-Create an `OPENROUTER_API_KEY` repository secret and add a workflow like [the minimal example](examples/minimal.yml). For direct Jev access, create a `TYPESAFE_API_KEY` secret and set `provider: typesafe` with `typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}`. Replace `OWNER/DeciLabel` and `FULL_40_CHARACTER_COMMIT_SHA` with the repository and a verified full commit SHA after installing DeciLabel. The workflow listens to Issues and `pull_request_target`, grants only label-write permissions, uses per-item concurrency, and does not check out or run submitted code.
+### Install and configure
+
+1. In the repository you want DeciLabel to label, open **Settings → Secrets and variables → Actions → New repository secret**. Add either `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` with a key from the provider you plan to use.
+2. Copy [the minimal workflow](examples/minimal.yml) into `.github/workflows/decilabel.yml`. It uses the published `EvanProgramming/decilabel@v1.0.0` action, listens to new and updated Issues and pull requests, and requests only the label-write permissions it needs.
+3. Confirm the target repository already has the labels you want DeciLabel to select. The action never creates labels.
+4. Commit the workflow. Open or update an Issue or pull request; then view the **DeciLabel** run under the repository's **Actions** tab. The run summary explains labels selected, added, or rejected.
+
+The minimal example uses OpenRouter with Jev. For Microsoft's model, keep `provider: openrouter`, set `model: microsoft/microsoft-decision-1`, and use the `OPENROUTER_API_KEY` secret. To call Jev directly through TypeSafe, change the step inputs to:
+
+```yaml
+provider: typesafe
+typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
+model: typesafe/jev-1.13
+```
+
+The `@v1.0.0` reference stays on this release. To receive compatible fixes automatically, use `@v1`; for stronger supply-chain pinning, use the full commit SHA shown on the [v1.0.0 release page](https://github.com/EvanProgramming/decilabel/releases/tag/v1.0.0). On public repositories, check the workflow execution policies below if a run does not start.
 
 The workflow handles these events:
 

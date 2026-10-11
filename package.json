@@ -1,7 +1,7 @@
 {
   "name": "decilabel",
   "version": "1.0.0",
-  "description": "Decision-powered GitHub issue and pull request labeling action",
+  "description": "Automatically add evidence-supported GitHub labels with Jev or Microsoft Decision 1",
   "license": "MIT",
   "private": false,
   "type": "module",
