@@ -7,6 +7,7 @@
   "type": "module",
   "scripts": {
     "build": "ncc build dist-entry.ts -o dist --license licenses.txt",
+    "build:calibration": "tsc --outDir lib",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",

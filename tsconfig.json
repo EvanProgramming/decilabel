@@ -12,5 +12,5 @@
     "outDir": "lib",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts", "dist-entry.ts"]
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts", "dist-entry.ts"]
 }
