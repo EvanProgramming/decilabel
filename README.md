@@ -8,8 +8,9 @@ DeciLabel classifies GitHub Issues and pull requests with a typed Decisions API,
 
 1. In the repository you want DeciLabel to label, open **Settings → Secrets and variables → Actions → New repository secret**. Add either `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` with a key from the provider you plan to use.
 2. Copy [the minimal workflow](examples/minimal.yml) into `.github/workflows/decilabel.yml`. It uses the published `EvanProgramming/decilabel@v1.0.0` action, listens to new and updated Issues and pull requests, and requests only the label-write permissions it needs.
-3. Confirm the target repository already has the labels you want DeciLabel to select. The action never creates labels.
-4. Commit the workflow. Open or update an Issue or pull request; then view the **DeciLabel** run under the repository's **Actions** tab. The run summary explains labels selected, added, or rejected.
+3. Because the workflow uses `pull_request_target`, check **Settings → Actions → Policies** in public repositories and allow the DeciLabel workflow's required events. Review actor restrictions for outside contributors and any inherited organization or enterprise policies. A policy-blocked workflow never starts, so check Actions policy insights if no run appears.
+4. Confirm the target repository already has the labels you want DeciLabel to select. The action never creates labels.
+5. Commit the workflow. Open or update an Issue or pull request; then view the **DeciLabel** run under the repository's **Actions** tab. The run summary explains labels selected, added, or rejected.
 
 The minimal example uses OpenRouter with Jev. For Microsoft's model, keep `provider: openrouter`, set `model: microsoft/microsoft-decision-1`, and use the `OPENROUTER_API_KEY` secret. To call Jev directly through TypeSafe, change the step inputs to:
 
