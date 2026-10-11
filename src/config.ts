@@ -59,7 +59,7 @@ export function parseConfig(
   if (!supported.has(model)) throw new Error(`Unsupported model: ${model}`);
   if (provider === "typesafe" && model !== "typesafe/jev-1.13")
     throw new Error("The TypeSafe provider only supports Jev.");
-  const threshold = Number(input("threshold") || "0.68");
+  const threshold = Number(input("threshold") || "0.67");
   if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1)
     throw new Error("threshold must be a number from 0 to 1.");
   const maxLabels = Number(input("max-labels") || "3");

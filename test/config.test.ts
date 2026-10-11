@@ -15,7 +15,7 @@ describe("configuration", () => {
     });
     expect(config.model).toBe("typesafe/jev-1.13");
     expect(config.provider).toBe("openrouter");
-    expect(config.threshold).toBe(0.68);
+    expect(config.threshold).toBe(0.67);
     expect(config.maxLabels).toBe(3);
     expect(config.exclude).toEqual([]);
     expect(() =>
