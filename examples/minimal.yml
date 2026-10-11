@@ -1,0 +1,20 @@
+name: DeciLabel
+on:
+  issues:
+    types: [opened, edited, reopened]
+  pull_request_target:
+    types: [opened, edited, synchronize, reopened, ready_for_review]
+permissions:
+  issues: write
+  pull-requests: write
+concurrency:
+  group: decilabel-${{ github.repository }}-${{ github.event.issue.number || github.event.pull_request.number }}
+  cancel-in-progress: true
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: OWNER/DeciLabel@FULL_40_CHARACTER_COMMIT_SHA
+        with:
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}

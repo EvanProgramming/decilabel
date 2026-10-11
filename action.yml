@@ -1,0 +1,56 @@
+name: DeciLabel
+author: Evan Gong
+description: Add evidence-supported GitHub issue and pull request labels with OpenRouter Decisions.
+branding:
+  icon: tag
+  color: blue
+inputs:
+  openrouter-api-key:
+    description: OpenRouter API key used for Decisions requests.
+    required: true
+  github-token:
+    description: Token with issues:write and pull-requests:write.
+    required: true
+    default: ${{ github.token }}
+  model:
+    description: Supported Decisions model.
+    required: false
+    default: typesafe/jev-1.13
+  threshold:
+    description: Minimum Noul yes probability or Choice winning-option probability.
+    required: false
+    default: "0.70"
+  max-labels:
+    description: Maximum eligible labels present after this run, counting existing eligible labels.
+    required: false
+    default: "3"
+  include-labels:
+    description: Optional JSON array of repository label names to consider; [] means all eligible labels.
+    required: false
+    default: "[]"
+  exclude-labels:
+    description: JSON array of additional excluded label names.
+    required: false
+    default: "[]"
+  exclusive-groups:
+    description: Optional JSON array of disjoint arrays of mutually exclusive label names.
+    required: false
+    default: "[]"
+  dry-run:
+    description: Classify and report without adding labels.
+    required: false
+    default: "false"
+outputs:
+  selected-labels:
+    description: JSON array of labels selected by policy.
+  added-labels:
+    description: JSON array of labels actually added by this run.
+  results:
+    description: JSON array of probabilities, confidence where available, warnings, and reasons.
+  status:
+    description: completed, dry-run, skipped, or failed.
+  skip-reason:
+    description: Reason classification or writes were skipped, if applicable.
+runs:
+  using: node24
+  main: dist/index.js

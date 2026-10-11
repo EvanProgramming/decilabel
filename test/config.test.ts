@@ -1,0 +1,52 @@
+import { describe, expect, it } from "vitest";
+import { parseConfig } from "../src/config.js";
+
+const parse = (values: Record<string, string>) =>
+  parseConfig(
+    (name) => values[name] ?? "",
+    () => false,
+  );
+
+describe("configuration", () => {
+  it("uses documented defaults and supported model IDs", () => {
+    const config = parse({
+      "openrouter-api-key": "key",
+      "github-token": "token",
+    });
+    expect(config.model).toBe("typesafe/jev-1.13");
+    expect(config.threshold).toBe(0.7);
+    expect(config.maxLabels).toBe(3);
+    expect(config.exclude).toEqual([]);
+    expect(() =>
+      parse({
+        "openrouter-api-key": "key",
+        "github-token": "token",
+        model: "provider/unknown",
+      }),
+    ).toThrow(/Unsupported model/);
+  });
+
+  it("rejects bad limits, malformed arrays, and overlapping groups", () => {
+    expect(() =>
+      parse({
+        "openrouter-api-key": "key",
+        "github-token": "token",
+        threshold: "1.1",
+      }),
+    ).toThrow(/threshold/);
+    expect(() =>
+      parse({
+        "openrouter-api-key": "key",
+        "github-token": "token",
+        "include-labels": "bug",
+      }),
+    ).toThrow(/JSON/);
+    expect(() =>
+      parse({
+        "openrouter-api-key": "key",
+        "github-token": "token",
+        "exclusive-groups": '[["bug","feature"],["feature","docs"]]',
+      }),
+    ).toThrow(/overlap/);
+  });
+});
