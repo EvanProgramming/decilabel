@@ -14,9 +14,7 @@ import type { DecisionAnswer } from "../src/types.js";
 
 const owner = "EvanProgramming";
 const repo = "OpenKyrozen";
-const thresholds = [
-  0.5, 0.55, 0.6, 0.65, 0.67, 0.68, 0.7, 0.75, 0.8, 0.85, 0.9, 0.95,
-];
+const thresholds = Array.from({ length: 101 }, (_, i) => i / 100);
 const exclude = new Set(DEFAULT_EXCLUDES.map((name) => name.toLowerCase()));
 
 interface DatasetItem {
