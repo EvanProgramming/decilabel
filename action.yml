@@ -26,7 +26,7 @@ inputs:
   threshold:
     description: Minimum Noul yes probability or Choice winning-option probability.
     required: false
-    default: "0.70"
+    default: "0.68"
   max-labels:
     description: Maximum eligible labels present after this run, counting existing eligible labels.
     required: false
