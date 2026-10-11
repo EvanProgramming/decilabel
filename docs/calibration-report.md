@@ -1,6 +1,6 @@
 # DeciLabel real-example calibration
 
-**Evaluation status:** Jev-only quality gate passed at `0.92` in two live runs. The direct-TypeSafe workflow uses `0.92`; the generic Action default remains `0.67` because OpenRouter/Microsoft was not evaluated.
+**Evaluation status:** The earlier precision-first Jev cutoff was `0.92`. A new coverage-oriented live run is pending; it will select the threshold producing the most accepted labels while retaining at least `80%` observed precision and ten correct accepted labels. The direct-TypeSafe workflow remains at `0.92` until that run completes.
 
 ## Method
 
@@ -10,7 +10,7 @@ The workflow fetches the current item snapshots and repository label taxonomy us
 
 TypeSafe Jev is evaluated through the direct TypeSafe API. Microsoft Decision 1 is also evaluated through OpenRouter if `OPENROUTER_API_KEY` is configured. A shared cutoff is reported only when both models meet the gate. The TypeSafe-only cutoff is reported separately if OpenRouter credentials are absent.
 
-For each threshold, precision and recall are micro-averaged over accepted label assignments, after the Action's ranking and label ceiling. Abstention is the count of labeled examples with no selected labels. The quality gate is the lowest threshold with at least `95%` observed precision and ten or more correct accepted label assignments per evaluated model.
+For each threshold, precision and recall are micro-averaged over accepted label assignments, after the Action's ranking and label ceiling. Abstention is the count of labeled examples with no selected labels. The previous run selected a high-precision point (at least `95%` precision and ten correct labels). This recalibration instead maximizes accepted-label coverage subject to at least `80%` observed precision and ten correct accepted labels. Ties favor more correct labels, then the lower threshold. The floor permits up to one observed false positive in five accepted labels on this small holdout; it is an explicit tradeoff, not a universal accuracy guarantee.
 
 ## Scored examples
 
@@ -50,7 +50,7 @@ These are useful to inspect whether the models abstain on items with no human-as
 
 ## Results
 
-Both live runs used TypeSafe Jev 1.13 against the same 16 labeled items, 8 unlabelled challenges, and 31 candidate labels. The lowest displayed 0.01-step cutoff meeting the gate was `0.92` in each run. The exact breakpoint analysis of run 1 found the first passing point just above `0.91`; `0.92` is the practical, repeatable cutoff.
+The earlier precision-first evaluation used TypeSafe Jev 1.13 against the same 16 labeled items, 8 unlabelled challenges, and 31 candidate labels. It found `0.92` in two runs under a 95% precision gate. The new live run and its selected recall-oriented cutoff will be recorded below after completion.
 
 | Threshold | Run 1 TP / FP / FN |  Precision |    Recall |  Abstained | Run 2 TP / FP / FN |  Precision |    Recall |  Abstained |
 | --------: | -----------------: | ---------: | --------: | ---------: | -----------------: | ---------: | --------: | ---------: |

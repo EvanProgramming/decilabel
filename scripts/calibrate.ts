@@ -8,7 +8,11 @@ import {
   callDecisions,
 } from "../src/decisions.js";
 import { getSnapshot, listRepositoryLabels } from "../src/github.js";
-import { redactEvidence, sweepThresholds } from "../src/calibration.js";
+import {
+  chooseCoverageThreshold,
+  redactEvidence,
+  sweepThresholds,
+} from "../src/calibration.js";
 import type { CalibrationExample } from "../src/calibration.js";
 import type { DecisionAnswer } from "../src/types.js";
 
@@ -156,16 +160,10 @@ async function run(): Promise<void> {
       examples.push({ ...sourceExamples[index]!, questions, answers });
     }
     const sweeps = sweepThresholds(examples, candidates, thresholds);
-    const qualifying = sweeps.filter(
-      (sweep) =>
-        sweep.precision !== null &&
-        sweep.precision >= 0.95 &&
-        sweep.truePositives >= 10,
-    );
     models.push({
       provider: configured.provider,
       model: configured.model,
-      selectedThreshold: qualifying[0]?.threshold ?? null,
+      selectedThreshold: chooseCoverageThreshold(sweeps),
       sweeps,
     });
   }
@@ -177,7 +175,7 @@ async function run(): Promise<void> {
               (sweep) =>
                 sweep.threshold === threshold &&
                 sweep.precision !== null &&
-                sweep.precision >= 0.95 &&
+                sweep.precision >= 0.8 &&
                 sweep.truePositives >= 10,
             ),
           ),
@@ -193,7 +191,7 @@ async function run(): Promise<void> {
     references,
     qualification: {
       criterion:
-        "lowest threshold with observed precision >= 95% and >= 10 correct accepted labels",
+        "highest accepted-label coverage among thresholds with observed precision >= 80% and >= 10 correct accepted labels; ties prefer more true positives then the lower threshold",
       modelsEvaluated: models.map(({ provider, model, selectedThreshold }) => ({
         provider,
         model,
@@ -239,7 +237,7 @@ async function run(): Promise<void> {
     `Repository: ${owner}/${repo}; ${scoredCount} labeled examples and ${challengeCount} unlabeled challenge examples; ${candidates.length} candidate labels.`,
     "Labeled examples are scored against their existing non-bot repository labels. Unlabeled challenge items are reported separately and do not count as known negatives.",
     table,
-    `Per-model thresholds: ${models.map((modelResult) => `${modelResult.model}=${thresholdString(modelResult.selectedThreshold)}`).join(", ")}. Shared threshold: ${thresholdString(sharedThreshold)}.`,
+    `Coverage-oriented thresholds (minimum 80% observed precision and 10 correct accepted labels): ${models.map((modelResult) => `${modelResult.model}=${thresholdString(modelResult.selectedThreshold)}`).join(", ")}. Shared threshold: ${thresholdString(sharedThreshold)}.`,
     `At 0.67, selected labels across the ${challengeCount} unlabeled challenge items: ${challengeAtDefault.join(", ")}. These are not scored as errors.`,
     "Only scores, labels, public item references, and aggregate metrics are retained. Issue bodies, diffs, credentials, and raw provider payloads are not written to the artifact.",
   ].join("\n\n");

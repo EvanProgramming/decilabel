@@ -1,7 +1,11 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { redactEvidence, sweepThresholds } from "../src/calibration.js";
-import type { CalibrationExample } from "../src/calibration.js";
+import {
+  chooseCoverageThreshold,
+  redactEvidence,
+  sweepThresholds,
+} from "../src/calibration.js";
+import type { CalibrationExample, ThresholdSweep } from "../src/calibration.js";
 import type { Label } from "../src/types.js";
 
 const labels: Label[] = [
@@ -106,5 +110,42 @@ describe("calibration threshold sweep", () => {
     expect(low?.challenges).toEqual([
       { id: "pr-3", predictedLabels: ["documentation"] },
     ]);
+  });
+
+  it("chooses the broadest coverage while preserving the precision floor", () => {
+    const sweeps = [
+      {
+        threshold: 0.67,
+        precision: 0.71,
+        truePositives: 25,
+        acceptedLabels: 36,
+      },
+      { threshold: 0.92, precision: 1, truePositives: 12, acceptedLabels: 12 },
+      {
+        threshold: 0.91,
+        precision: 0.82,
+        truePositives: 13,
+        acceptedLabels: 16,
+      },
+      {
+        threshold: 0.9,
+        precision: 0.78,
+        truePositives: 14,
+        acceptedLabels: 18,
+      },
+      { threshold: 0.8, precision: 0.8, truePositives: 10, acceptedLabels: 15 },
+    ] as ThresholdSweep[];
+
+    expect(chooseCoverageThreshold(sweeps)).toBe(0.91);
+    expect(
+      chooseCoverageThreshold([
+        {
+          threshold: 0.9,
+          precision: 0.8,
+          truePositives: 9,
+          acceptedLabels: 12,
+        },
+      ] as ThresholdSweep[]),
+    ).toBeNull();
   });
 });

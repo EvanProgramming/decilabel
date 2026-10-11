@@ -50,6 +50,26 @@ export interface ThresholdSweep {
   challenges: { id: string; predictedLabels: string[] }[];
 }
 
+export function chooseCoverageThreshold(
+  sweeps: ThresholdSweep[],
+): number | null {
+  return (
+    sweeps
+      .filter(
+        (sweep) =>
+          sweep.precision !== null &&
+          sweep.precision >= 0.8 &&
+          sweep.truePositives >= 10,
+      )
+      .sort(
+        (a, b) =>
+          b.acceptedLabels - a.acceptedLabels ||
+          b.truePositives - a.truePositives ||
+          a.threshold - b.threshold,
+      )[0]?.threshold ?? null
+  );
+}
+
 export function sweepThresholds(
   examples: CalibrationExample[],
   labels: Label[],
