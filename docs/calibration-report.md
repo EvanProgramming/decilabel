@@ -1,6 +1,6 @@
 # DeciLabel real-example calibration
 
-**Evaluation status:** The earlier precision-first Jev cutoff was `0.92`. A new coverage-oriented live run is pending; it will select the threshold producing the most accepted labels while retaining at least `80%` observed precision and ten correct accepted labels. The direct-TypeSafe workflow remains at `0.92` until that run completes.
+**Evaluation status:** Three live Jev runs support a coverage-oriented cutoff of `0.91`; the direct-TypeSafe workflow now uses `0.91`. In all three runs, this point produced more accepted labels than `0.92` while keeping observed precision above the selected `80%` floor.
 
 ## Method
 
@@ -50,27 +50,23 @@ These are useful to inspect whether the models abstain on items with no human-as
 
 ## Results
 
-The earlier precision-first evaluation used TypeSafe Jev 1.13 against the same 16 labeled items, 8 unlabelled challenges, and 31 candidate labels. It found `0.92` in two runs under a 95% precision gate. The new live run and its selected recall-oriented cutoff will be recorded below after completion.
+Three live runs evaluated TypeSafe Jev 1.13 on the same 16 labeled items, eight unlabeled challenges, and 31 candidate labels. The two earlier runs were precision-first sweeps; their stored probabilities were rescored under the new 80% coverage floor. The newest run performed the full live 0.01 grid under the coverage objective.
 
-| Threshold | Run 1 TP / FP / FN |  Precision |    Recall |  Abstained | Run 2 TP / FP / FN |  Precision |    Recall |  Abstained |
-| --------: | -----------------: | ---------: | --------: | ---------: | -----------------: | ---------: | --------: | ---------: |
-|      0.67 |       25 / 11 / 41 |      69.4% |     37.9% |     0 / 16 |       25 / 10 / 41 |      71.4% |     37.9% |     0 / 16 |
-|      0.70 |       24 / 10 / 42 |      70.6% |     36.4% |     0 / 16 |       24 / 10 / 42 |      70.6% |     36.4% |     0 / 16 |
-|      0.80 |        20 / 9 / 46 |      69.0% |     30.3% |     2 / 16 |        20 / 9 / 46 |      69.0% |     30.3% |     2 / 16 |
-|      0.90 |        14 / 5 / 52 |      73.7% |     21.2% |     6 / 16 |        14 / 4 / 52 |      77.8% |     21.2% |     6 / 16 |
-|      0.91 |        13 / 3 / 53 |      81.3% |     19.7% |     6 / 16 |        13 / 2 / 53 |      86.7% |     19.7% |     7 / 16 |
-|  **0.92** |    **12 / 0 / 54** | **100.0%** | **18.2%** | **7 / 16** |    **11 / 0 / 55** | **100.0%** | **16.7%** | **7 / 16** |
-|      0.93 |        10 / 0 / 56 |     100.0% |     15.2% |     8 / 16 |         9 / 0 / 57 |     100.0% |     13.6% |     9 / 16 |
-|      0.95 |         3 / 0 / 63 |     100.0% |      4.5% |    14 / 16 |         3 / 0 / 63 |     100.0% |      4.5% |    13 / 16 |
+| Threshold | Run 1 TP / FP / FN | Precision |    Recall | Accepted | Run 2 TP / FP / FN | Precision |    Recall | Accepted | Run 3 TP / FP / FN | Precision |    Recall | Accepted |
+| --------: | -----------------: | --------: | --------: | -------: | -----------------: | --------: | --------: | -------: | -----------------: | --------: | --------: | -------: |
+|      0.67 |       25 / 11 / 41 |     69.4% |     37.9% |       36 |       25 / 10 / 41 |     71.4% |     37.9% |       35 |       25 / 10 / 41 |     71.4% |     37.9% |       35 |
+|      0.90 |        14 / 5 / 52 |     73.7% |     21.2% |       19 |        14 / 4 / 52 |     77.8% |     21.2% |       18 |        13 / 4 / 53 |     76.5% |     19.7% |       17 |
+|  **0.91** |    **13 / 3 / 53** | **81.3%** | **19.7%** |   **16** |    **13 / 2 / 53** | **86.7%** | **19.7%** |   **15** |    **13 / 1 / 53** | **92.9%** | **19.7%** |   **14** |
+|      0.92 |        12 / 0 / 54 |    100.0% |     18.2% |       12 |        11 / 0 / 55 |    100.0% |     16.7% |       11 |        10 / 0 / 56 |    100.0% |     15.2% |       10 |
 
-Both runs pass the Jev-specific gate at `0.92`: at least ten correct accepted labels and at least 95% observed precision. Neither run passes at `0.91`. At `0.67`, the model also selected 23 labels across the eight unlabeled challenge items; those are not counted as measured errors, but the volume argues against using that lower cutoff as a high-precision setting.
+At `0.91`, each run accepts 14–16 labels, with 13 correct labels each time and observed precision from 81.3% to 92.9%. At `0.92`, the runs accept 10–12 labels, all correct, with recall from 15.2% to 18.2%. On the newest run, `0.91` adds four labels over `0.92`: three correct and one false positive; precision changes from 100% to 92.9%. This is the requested coverage tradeoff. The nearby `0.90` point fails the 80% precision floor in all three runs, so `0.91` is the lowest qualifying point among the tested grid in the repeated results.
 
-The original [coarser-grid run](https://github.com/EvanProgramming/decilabel/actions/runs/38110641758) and the [0.01-grid repeat](https://github.com/EvanProgramming/decilabel/actions/runs/38110846309) completed successfully. Each run's 30-day artifact contains item URLs, labels, probabilities, deterministic policy reasons, and aggregate scores. It does not contain Issue bodies, PR diffs, credentials, or raw provider payloads.
+The selected `0.91` cutoff is the coverage-maximizing qualifying point: among thresholds with at least 80% observed precision and ten correct accepted labels, choose the one with the largest number of accepted labels. Ties favor more true positives, then the lower threshold. The [first live run](https://github.com/EvanProgramming/decilabel/actions/runs/38110641758), [second live run](https://github.com/EvanProgramming/decilabel/actions/runs/38110846309), and [new coverage-oriented run](https://github.com/EvanProgramming/decilabel/actions/runs/38112527093) completed successfully. Their 30-day artifacts retain item URLs, labels, probabilities, deterministic policy reasons, and aggregate scores, not bodies, diffs, credentials, or raw provider payloads. The latest run selected 22 labels across eight unlabeled challenge examples at `0.67`; these are not counted as errors because their negative labels are unknown.
 
 The cross-model/shared quality gate remains unverified: no `OPENROUTER_API_KEY` was configured for these runs, so Microsoft Decision 1 was not evaluated.
 
 ## Interpretation and limits
 
-This small, manually selected holdout tests a real but narrow taxonomy from one repository. Closed-item labels can be incomplete, and the examples are not a random sample of future traffic. Scored PR #224 is linked to scored Issue #223, so the 16 labeled items represent 15 distinct underlying tasks. The two runs repeat the same items, so they show response variation rather than adding independent examples. The challenge set has no verified negative labels. Precision and recall here are observed benchmark metrics, not probability calibration; `0.92` met the defined Jev cutoff on this dataset, but recall was only 16.7–18.2%. It is a high-precision, low-coverage operating point, not evidence that Jev is broadly calibrated or that `0.92` transfers to other repositories or models. Provider model aliases can change over time; retain each workflow artifact with its run date when comparing later evaluations.
+This small, manually selected holdout tests a real but narrow taxonomy from one repository. Closed-item labels can be incomplete, and the examples are not a random sample of future traffic. Scored PR #224 is linked to scored Issue #223, so the 16 labeled items represent 15 distinct underlying tasks. All three runs repeat the same items, so they show response variation rather than adding independent examples. The challenge set has no verified negative labels. Precision and recall here are observed benchmark metrics, not probability calibration; `0.91` met the chosen coverage floor on these runs, with 19.7% recall and 81.3–92.9% observed precision. This threshold is specific to Jev and this taxonomy; the 80% floor is a deliberate tolerance for false positives, not a broad quality guarantee. Provider aliases can change over time; retain each artifact with its run date when comparing later evaluations.
 
 The calibration workflow redacts common credential formats from fetched evidence before provider submission. That filter is defense in depth, not a guarantee that every possible secret format is detected; the source repository is public, and its Issue/PR contents and available diff excerpts are sent to the evaluated provider.
