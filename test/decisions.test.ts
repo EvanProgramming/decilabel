@@ -144,6 +144,35 @@ describe("Decisions contract", () => {
     },
   );
 
+  it("uses TypeSafe's direct Jev endpoint and model alias", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({ answers: { q: { type: "noul", noul: 1 } } }),
+        {
+          status: 200,
+        },
+      ),
+    );
+    await callDecisions(
+      "typesafe/jev-1.13",
+      {},
+      [{ id: "q", type: "noul", labelIds: ["id0"], text: "supports" }],
+      "secret",
+      fetcher,
+      undefined,
+      "typesafe",
+    );
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://api.typesafe.ai/v1/systemone",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer secret" }),
+      }),
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body)).model).toBe(
+      "jev-latest",
+    );
+  });
+
   it("retries transient responses at most three times and stops on malformed responses", async () => {
     const question = [
       { id: "q", type: "noul" as const, labelIds: ["id0"], text: "supports" },

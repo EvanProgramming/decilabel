@@ -1,13 +1,20 @@
 name: DeciLabel
 author: Evan Gong
-description: Add evidence-supported GitHub issue and pull request labels with OpenRouter Decisions.
+description: Add evidence-supported GitHub issue and pull request labels with typed Decisions APIs.
 branding:
   icon: tag
   color: blue
 inputs:
   openrouter-api-key:
-    description: OpenRouter API key used for Decisions requests.
-    required: true
+    description: OpenRouter API key when provider is openrouter.
+    required: false
+  typesafe-api-key:
+    description: TypeSafe API key when provider is typesafe.
+    required: false
+  provider:
+    description: Decisions API provider (openrouter or typesafe).
+    required: false
+    default: openrouter
   github-token:
     description: Token with issues:write and pull-requests:write.
     required: true

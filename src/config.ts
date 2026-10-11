@@ -2,6 +2,7 @@ import * as core from "@actions/core";
 import { MODEL_LIMITS } from "./decisions.js";
 
 export interface Config {
+  provider: "openrouter" | "typesafe";
   apiKey: string;
   token: string;
   model: string;
@@ -42,12 +43,22 @@ export function parseConfig(
   input: (name: string) => string,
   bool: (name: string) => boolean,
 ): Config {
-  const apiKey = input("openrouter-api-key");
+  const provider = input("provider") || "openrouter";
+  if (provider !== "openrouter" && provider !== "typesafe")
+    throw new Error("provider must be openrouter or typesafe.");
+  const apiKey = input(
+    provider === "typesafe" ? "typesafe-api-key" : "openrouter-api-key",
+  );
   const token = input("github-token") || process.env.GITHUB_TOKEN || "";
-  if (!apiKey) throw new Error("openrouter-api-key is required.");
+  if (!apiKey)
+    throw new Error(
+      `${provider === "typesafe" ? "typesafe-api-key" : "openrouter-api-key"} is required when provider is ${provider}.`,
+    );
   if (!token) throw new Error("github-token is required.");
   const model = input("model") || "typesafe/jev-1.13";
   if (!supported.has(model)) throw new Error(`Unsupported model: ${model}`);
+  if (provider === "typesafe" && model !== "typesafe/jev-1.13")
+    throw new Error("The TypeSafe provider only supports Jev.");
   const threshold = Number(input("threshold") || "0.70");
   if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1)
     throw new Error("threshold must be a number from 0 to 1.");
@@ -89,6 +100,7 @@ export function parseConfig(
       return group;
     });
   return {
+    provider,
     apiKey,
     token,
     model,

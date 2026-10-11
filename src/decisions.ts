@@ -19,6 +19,7 @@ const MAX_CHOICES = 8;
 const MAX_STATE = 16 * 1024;
 const MAX_REQUEST = 24 * 1024;
 const URL = "https://openrouter.ai/api/alpha/decisions";
+const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
 
 export function buildQuestions(
   labels: { id: string; name: string; description: string }[],
@@ -115,6 +116,7 @@ export async function callDecisions(
   apiKey: string,
   fetcher: typeof fetch = fetch,
   deadline = Date.now() + 120_000,
+  provider: "openrouter" | "typesafe" = "openrouter",
 ): Promise<Record<string, DecisionAnswer | undefined>> {
   const stateText = JSON.stringify(state);
   if (new TextEncoder().encode(stateText).length > MAX_STATE)
@@ -129,7 +131,11 @@ export async function callDecisions(
       { type, instructions: text, ...(criteria ? { criteria } : {}) },
     ]),
   );
-  const payload = { model, state: stateText, questions: requestQuestions };
+  const payload = {
+    model: provider === "typesafe" ? "jev-latest" : model,
+    state: stateText,
+    questions: requestQuestions,
+  };
   const serialized = JSON.stringify(payload);
   if (new TextEncoder().encode(serialized).length > MAX_REQUEST)
     throw new Error(
@@ -140,18 +146,21 @@ export async function callDecisions(
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new Error("Decisions request deadline exceeded.");
     try {
-      const response = await fetcher(URL, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
+      const response = await fetcher(
+        provider === "typesafe" ? TYPESAFE_URL : URL,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: serialized,
+          signal: AbortSignal.timeout(Math.min(15_000, remaining)),
         },
-        body: serialized,
-        signal: AbortSignal.timeout(Math.min(15_000, remaining)),
-      });
+      );
       if (!response.ok) {
         const error = new Error(
-          `OpenRouter Decisions returned HTTP ${response.status}.`,
+          `Decisions provider returned HTTP ${response.status}.`,
         );
         if (!transient(response.status) || attempt === 2) throw error;
         const retryValue = response.headers.get("retry-after");
@@ -177,7 +186,7 @@ export async function callDecisions(
       try {
         data = (await response.json()) as ApiPayload;
       } catch {
-        throw new Error("OpenRouter Decisions returned a malformed response.");
+        throw new Error("Decisions provider returned a malformed response.");
       }
       if (
         !data ||
@@ -185,7 +194,7 @@ export async function callDecisions(
         data.answers === null ||
         Array.isArray(data.answers)
       )
-        throw new Error("OpenRouter Decisions returned a malformed response.");
+        throw new Error("Decisions provider returned a malformed response.");
       const answers: Record<string, DecisionAnswer | undefined> = {};
       for (const question of questions) {
         const raw = data.answers[question.id];
@@ -224,7 +233,7 @@ export async function callDecisions(
       lastError =
         error instanceof Error && !error.name.includes("Abort")
           ? error
-          : new Error("OpenRouter Decisions request timed out.");
+          : new Error("Decisions provider request timed out.");
       if (lastError.message.includes("malformed response")) throw lastError;
       if (
         error instanceof Error &&

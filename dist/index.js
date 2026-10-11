@@ -37337,6 +37337,7 @@ const MAX_CHOICES = 8;
 const MAX_STATE = 16 * 1024;
 const MAX_REQUEST = 24 * 1024;
 const decisions_URL = "https://openrouter.ai/api/alpha/decisions";
+const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
 function buildQuestions(labels, groups, occupied, includeMode) {
     const eligible = labels.filter((label) => !occupied.some((n) => n.toLocaleLowerCase() === label.name.toLocaleLowerCase()));
     if (eligible.length > MAX_LABELS)
@@ -37390,7 +37391,7 @@ function batchQuestions(questions) {
 }
 const decisions_transient = (status) => status === 429 || status >= 500;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-async function callDecisions(model, state, questions, apiKey, fetcher = fetch, deadline = Date.now() + 120_000) {
+async function callDecisions(model, state, questions, apiKey, fetcher = fetch, deadline = Date.now() + 120_000, provider = "openrouter") {
     const stateText = JSON.stringify(state);
     if (new TextEncoder().encode(stateText).length > MAX_STATE)
         throw new Error("Serialized evidence exceeds the 16 KB application limit.");
@@ -37400,7 +37401,11 @@ async function callDecisions(model, state, questions, apiKey, fetcher = fetch, d
         id,
         { type, instructions: text, ...(criteria ? { criteria } : {}) },
     ]));
-    const payload = { model, state: stateText, questions: requestQuestions };
+    const payload = {
+        model: provider === "typesafe" ? "jev-latest" : model,
+        state: stateText,
+        questions: requestQuestions,
+    };
     const serialized = JSON.stringify(payload);
     if (new TextEncoder().encode(serialized).length > MAX_REQUEST)
         throw new Error("Serialized Decisions request exceeds the 24 KB application limit.");
@@ -37410,7 +37415,7 @@ async function callDecisions(model, state, questions, apiKey, fetcher = fetch, d
         if (remaining <= 0)
             throw new Error("Decisions request deadline exceeded.");
         try {
-            const response = await fetcher(decisions_URL, {
+            const response = await fetcher(provider === "typesafe" ? TYPESAFE_URL : decisions_URL, {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${apiKey}`,
@@ -37420,7 +37425,7 @@ async function callDecisions(model, state, questions, apiKey, fetcher = fetch, d
                 signal: AbortSignal.timeout(Math.min(15_000, remaining)),
             });
             if (!response.ok) {
-                const error = new Error(`OpenRouter Decisions returned HTTP ${response.status}.`);
+                const error = new Error(`Decisions provider returned HTTP ${response.status}.`);
                 if (!decisions_transient(response.status) || attempt === 2)
                     throw error;
                 const retryValue = response.headers.get("retry-after");
@@ -37444,13 +37449,13 @@ async function callDecisions(model, state, questions, apiKey, fetcher = fetch, d
                 data = (await response.json());
             }
             catch {
-                throw new Error("OpenRouter Decisions returned a malformed response.");
+                throw new Error("Decisions provider returned a malformed response.");
             }
             if (!data ||
                 typeof data.answers !== "object" ||
                 data.answers === null ||
                 Array.isArray(data.answers))
-                throw new Error("OpenRouter Decisions returned a malformed response.");
+                throw new Error("Decisions provider returned a malformed response.");
             const answers = {};
             for (const question of questions) {
                 const raw = data.answers[question.id];
@@ -37485,7 +37490,7 @@ async function callDecisions(model, state, questions, apiKey, fetcher = fetch, d
             lastError =
                 error instanceof Error && !error.name.includes("Abort")
                     ? error
-                    : new Error("OpenRouter Decisions request timed out.");
+                    : new Error("Decisions provider request timed out.");
             if (lastError.message.includes("malformed response"))
                 throw lastError;
             if (error instanceof Error &&
@@ -37527,15 +37532,20 @@ function jsonNames(raw, name) {
     return value.map((item) => item.trim());
 }
 function parseConfig(input, bool) {
-    const apiKey = input("openrouter-api-key");
+    const provider = input("provider") || "openrouter";
+    if (provider !== "openrouter" && provider !== "typesafe")
+        throw new Error("provider must be openrouter or typesafe.");
+    const apiKey = input(provider === "typesafe" ? "typesafe-api-key" : "openrouter-api-key");
     const token = input("github-token") || process.env.GITHUB_TOKEN || "";
     if (!apiKey)
-        throw new Error("openrouter-api-key is required.");
+        throw new Error(`${provider === "typesafe" ? "typesafe-api-key" : "openrouter-api-key"} is required when provider is ${provider}.`);
     if (!token)
         throw new Error("github-token is required.");
     const model = input("model") || "typesafe/jev-1.13";
     if (!supported.has(model))
         throw new Error(`Unsupported model: ${model}`);
+    if (provider === "typesafe" && model !== "typesafe/jev-1.13")
+        throw new Error("The TypeSafe provider only supports Jev.");
     const threshold = Number(input("threshold") || "0.70");
     if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1)
         throw new Error("threshold must be a number from 0 to 1.");
@@ -37571,6 +37581,7 @@ function parseConfig(input, bool) {
         return group;
     });
     return {
+        provider,
         apiKey,
         token,
         model,
@@ -37991,7 +38002,7 @@ async function run() {
         const deadline = Date.now() + 120_000;
         const answers = {};
         for (const batch of batchQuestions(questions))
-            Object.assign(answers, await callDecisions(config.model, initial.stateText, batch, config.apiKey, fetch, deadline));
+            Object.assign(answers, await callDecisions(config.model, initial.stateText, batch, config.apiKey, fetch, deadline, config.provider));
         const existingEligibleCount = initial.labels.filter((name) => eligible.some((label) => label.name.toLocaleLowerCase() === name.toLocaleLowerCase())).length;
         const policy = evaluateAnswers(questions, answers, labels, config.threshold, config.maxLabels, initial.labels, groups, existingEligibleCount);
         selected = policy.selected.filter((name) => !vetoIds.has(labelByName.get(name.toLocaleLowerCase())?.id ?? ""));

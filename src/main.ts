@@ -111,6 +111,7 @@ export async function run(): Promise<void> {
           config.apiKey,
           fetch,
           deadline,
+          config.provider,
         ),
       );
     const existingEligibleCount = initial.labels.filter((name) =>
