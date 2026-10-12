@@ -37322,15 +37322,103 @@ function getOctokit(token, options, ...additionalPlugins) {
     return new GitHubWithPlugins(getOctokitOptions(token, options));
 }
 //# sourceMappingURL=github.js.map
+;// CONCATENATED MODULE: ./src/config.ts
+
+const DEFAULT_EXCLUDES = [
+    "duplicate",
+    "invalid",
+    "wontfix",
+    "good first issue",
+    "help wanted",
+];
+function jsonNames(raw, name) {
+    if (!raw.trim())
+        return [];
+    let value;
+    try {
+        value = JSON.parse(raw);
+    }
+    catch {
+        throw new Error(`${name} must be valid JSON.`);
+    }
+    if (!Array.isArray(value) ||
+        value.some((item) => typeof item !== "string" || !item.trim()))
+        throw new Error(`${name} must be a JSON array of non-empty label names.`);
+    return value.map((item) => item.trim());
+}
+function parseConfig(input, bool) {
+    const provider = input("provider") || "openrouter";
+    if (provider !== "openrouter" &&
+        provider !== "typesafe" &&
+        provider !== "openai")
+        throw new Error("provider must be openrouter, typesafe, or openai.");
+    const keyInput = provider === "typesafe"
+        ? "typesafe-api-key"
+        : provider === "openai"
+            ? "openai-api-key"
+            : "openrouter-api-key";
+    const apiKey = input(keyInput);
+    const token = input("github-token") || process.env.GITHUB_TOKEN || "";
+    if (!apiKey)
+        throw new Error(`${keyInput} is required when provider is ${provider}.`);
+    if (!token)
+        throw new Error("github-token is required.");
+    const model = input("model") ||
+        (provider === "openai" ? "gpt-6-luna" : "typesafe/jev-1.13");
+    if (provider === "typesafe" && model !== "typesafe/jev-1.13")
+        throw new Error("The TypeSafe provider only supports Jev.");
+    if (provider === "openai" && model !== "gpt-6-luna")
+        throw new Error("The OpenAI provider only supports gpt-6-luna.");
+    const threshold = Number(input("threshold") || "0.67");
+    if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1)
+        throw new Error("threshold must be a number from 0 to 1.");
+    const maxLabels = Number(input("max-labels") || "3");
+    if (!Number.isInteger(maxLabels) || maxLabels < 0 || maxLabels > 100)
+        throw new Error("max-labels must be an integer from 0 to 100.");
+    const include = jsonNames(input("include-labels"), "include-labels");
+    const exclude = jsonNames(input("exclude-labels"), "exclude-labels");
+    let groups;
+    try {
+        groups = input("exclusive-groups")
+            ? JSON.parse(input("exclusive-groups"))
+            : [];
+    }
+    catch {
+        throw new Error("exclusive-groups must be valid JSON.");
+    }
+    if (!Array.isArray(groups) ||
+        groups.some((group) => !Array.isArray(group) ||
+            group.length < 2 ||
+            group.some((n) => typeof n !== "string" || !n.trim())))
+        throw new Error("exclusive-groups must be a JSON array of label-name arrays, each with at least two names.");
+    const seen = new Set();
+    const normalizedGroups = groups
+        .map((group) => group.map((n) => n.trim()))
+        .map((group) => {
+        for (const name of group) {
+            const key = name.toLocaleLowerCase();
+            if (seen.has(key))
+                throw new Error(`exclusive-groups overlap at ${name}.`);
+            seen.add(key);
+        }
+        return group;
+    });
+    return {
+        provider,
+        apiKey,
+        token,
+        model,
+        threshold,
+        maxLabels,
+        include,
+        exclude,
+        groups: normalizedGroups,
+        dryRun: input("dry-run") ? bool("dry-run") : false,
+    };
+}
+const readConfig = () => parseConfig(getInput, getBooleanInput);
+
 ;// CONCATENATED MODULE: ./src/decisions.ts
-const MODEL_LIMITS = {
-    "typesafe/jev-1.13": {
-        openRouterContext: 32768,
-        typeSafeTotal: 65536,
-        typeSafeStatePlusLongestQuestion: 32768,
-    },
-    "microsoft/microsoft-decision-1": { providerContext: 32768 },
-};
 const MAX_LABELS = 100;
 const MAX_QUESTIONS = 16;
 const MAX_CHOICES = 8;
@@ -37338,6 +37426,7 @@ const MAX_STATE = 16 * 1024;
 const MAX_REQUEST = 24 * 1024;
 const decisions_URL = "https://openrouter.ai/api/alpha/decisions";
 const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
+const OPENAI_URL = "https://api.openai.com/v1/decisions";
 function buildQuestions(labels, groups, occupied, includeMode) {
     const eligible = labels.filter((label) => !occupied.some((n) => n.toLocaleLowerCase() === label.name.toLocaleLowerCase()));
     if (eligible.length > MAX_LABELS)
@@ -37391,21 +37480,70 @@ function batchQuestions(questions) {
 }
 const decisions_transient = (status) => status === 429 || status >= 500;
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+function normalizeOpenAIAnswers(raw) {
+    if (!Array.isArray(raw))
+        throw new Error("Decisions provider returned a malformed response.");
+    const answers = {};
+    for (const answer of raw) {
+        if (!answer || typeof answer !== "object")
+            continue;
+        const item = answer;
+        if (typeof item.name !== "string")
+            continue;
+        if (item.type === "predicate" && typeof item.probability === "number")
+            answers[item.name] = { type: "noul", noul: item.probability };
+        if (item.type === "choice" && typeof item.choice === "string") {
+            const probabilities = Array.isArray(item.probabilities)
+                ? Object.fromEntries(item.probabilities
+                    .filter((value) => Boolean(value) &&
+                    typeof value === "object" &&
+                    typeof value.value === "string" &&
+                    typeof value.probability === "number")
+                    .map(({ value, probability }) => [value, probability]))
+                : undefined;
+            answers[item.name] = {
+                type: "choice",
+                choice: item.choice,
+                ...(probabilities ? { probabilities } : {}),
+                ...(typeof item.confidence === "number"
+                    ? { confidence: item.confidence }
+                    : {}),
+            };
+        }
+    }
+    return answers;
+}
 async function callDecisions(model, state, questions, apiKey, fetcher = fetch, deadline = Date.now() + 120_000, provider = "openrouter") {
     const stateText = JSON.stringify(state);
     if (new TextEncoder().encode(stateText).length > MAX_STATE)
         throw new Error("Serialized evidence exceeds the 16 KB application limit.");
     if (questions.length > MAX_QUESTIONS)
         throw new Error("A Decisions request exceeds the 16-question application limit.");
-    const requestQuestions = Object.fromEntries(questions.map(({ id, type, text, criteria }) => [
-        id,
-        { type, instructions: text, ...(criteria ? { criteria } : {}) },
-    ]));
-    const payload = {
-        model: provider === "typesafe" ? "jev-latest" : model,
-        state: stateText,
-        questions: requestQuestions,
-    };
+    const requestQuestions = provider === "openai"
+        ? questions.map(({ id, type, text, criteria }) => ({
+            type: type === "noul" ? "predicate" : "choice",
+            name: id,
+            instructions: text,
+            ...(criteria
+                ? {
+                    choices: Object.entries(criteria).map(([value, description]) => ({
+                        value,
+                        description,
+                    })),
+                }
+                : {}),
+        }))
+        : Object.fromEntries(questions.map(({ id, type, text, criteria }) => [
+            id,
+            { type, instructions: text, ...(criteria ? { criteria } : {}) },
+        ]));
+    const payload = provider === "openai"
+        ? { model, input: stateText, questions: requestQuestions }
+        : {
+            model: provider === "typesafe" ? "jev-latest" : model,
+            state: stateText,
+            questions: requestQuestions,
+        };
     const serialized = JSON.stringify(payload);
     if (new TextEncoder().encode(serialized).length > MAX_REQUEST)
         throw new Error("Serialized Decisions request exceeds the 24 KB application limit.");
@@ -37415,7 +37553,11 @@ async function callDecisions(model, state, questions, apiKey, fetcher = fetch, d
         if (remaining <= 0)
             throw new Error("Decisions request deadline exceeded.");
         try {
-            const response = await fetcher(provider === "typesafe" ? TYPESAFE_URL : decisions_URL, {
+            const response = await fetcher(provider === "typesafe"
+                ? TYPESAFE_URL
+                : provider === "openai"
+                    ? OPENAI_URL
+                    : decisions_URL, {
                 method: "POST",
                 headers: {
                     Authorization: `Bearer ${apiKey}`,
@@ -37454,11 +37596,14 @@ async function callDecisions(model, state, questions, apiKey, fetcher = fetch, d
             if (!data ||
                 typeof data.answers !== "object" ||
                 data.answers === null ||
-                Array.isArray(data.answers))
+                (provider !== "openai" && Array.isArray(data.answers)))
                 throw new Error("Decisions provider returned a malformed response.");
+            const rawAnswers = provider === "openai"
+                ? normalizeOpenAIAnswers(data.answers)
+                : data.answers;
             const answers = {};
             for (const question of questions) {
-                const raw = data.answers[question.id];
+                const raw = rawAnswers[question.id];
                 if (!raw || typeof raw !== "object")
                     continue;
                 const obj = raw;
@@ -37504,96 +37649,6 @@ async function callDecisions(model, state, questions, apiKey, fetcher = fetch, d
     }
     throw lastError;
 }
-
-;// CONCATENATED MODULE: ./src/config.ts
-
-
-const supported = new Set(Object.keys(MODEL_LIMITS));
-const DEFAULT_EXCLUDES = [
-    "duplicate",
-    "invalid",
-    "wontfix",
-    "good first issue",
-    "help wanted",
-];
-function jsonNames(raw, name) {
-    if (!raw.trim())
-        return [];
-    let value;
-    try {
-        value = JSON.parse(raw);
-    }
-    catch {
-        throw new Error(`${name} must be valid JSON.`);
-    }
-    if (!Array.isArray(value) ||
-        value.some((item) => typeof item !== "string" || !item.trim()))
-        throw new Error(`${name} must be a JSON array of non-empty label names.`);
-    return value.map((item) => item.trim());
-}
-function parseConfig(input, bool) {
-    const provider = input("provider") || "openrouter";
-    if (provider !== "openrouter" && provider !== "typesafe")
-        throw new Error("provider must be openrouter or typesafe.");
-    const apiKey = input(provider === "typesafe" ? "typesafe-api-key" : "openrouter-api-key");
-    const token = input("github-token") || process.env.GITHUB_TOKEN || "";
-    if (!apiKey)
-        throw new Error(`${provider === "typesafe" ? "typesafe-api-key" : "openrouter-api-key"} is required when provider is ${provider}.`);
-    if (!token)
-        throw new Error("github-token is required.");
-    const model = input("model") || "typesafe/jev-1.13";
-    if (!supported.has(model))
-        throw new Error(`Unsupported model: ${model}`);
-    if (provider === "typesafe" && model !== "typesafe/jev-1.13")
-        throw new Error("The TypeSafe provider only supports Jev.");
-    const threshold = Number(input("threshold") || "0.67");
-    if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1)
-        throw new Error("threshold must be a number from 0 to 1.");
-    const maxLabels = Number(input("max-labels") || "3");
-    if (!Number.isInteger(maxLabels) || maxLabels < 0 || maxLabels > 100)
-        throw new Error("max-labels must be an integer from 0 to 100.");
-    const include = jsonNames(input("include-labels"), "include-labels");
-    const exclude = jsonNames(input("exclude-labels"), "exclude-labels");
-    let groups;
-    try {
-        groups = input("exclusive-groups")
-            ? JSON.parse(input("exclusive-groups"))
-            : [];
-    }
-    catch {
-        throw new Error("exclusive-groups must be valid JSON.");
-    }
-    if (!Array.isArray(groups) ||
-        groups.some((group) => !Array.isArray(group) ||
-            group.length < 2 ||
-            group.some((n) => typeof n !== "string" || !n.trim())))
-        throw new Error("exclusive-groups must be a JSON array of label-name arrays, each with at least two names.");
-    const seen = new Set();
-    const normalizedGroups = groups
-        .map((group) => group.map((n) => n.trim()))
-        .map((group) => {
-        for (const name of group) {
-            const key = name.toLocaleLowerCase();
-            if (seen.has(key))
-                throw new Error(`exclusive-groups overlap at ${name}.`);
-            seen.add(key);
-        }
-        return group;
-    });
-    return {
-        provider,
-        apiKey,
-        token,
-        model,
-        threshold,
-        maxLabels,
-        include,
-        exclude,
-        groups: normalizedGroups,
-        dryRun: input("dry-run") ? bool("dry-run") : false,
-    };
-}
-const readConfig = () => parseConfig(getInput, getBooleanInput);
 
 ;// CONCATENATED MODULE: ./src/github.ts
 

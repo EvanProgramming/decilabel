@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - uses: EvanProgramming/decilabel@v1.0.0
+      - uses: EvanProgramming/decilabel@v1.1.0
         with:
           provider: typesafe
           typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}

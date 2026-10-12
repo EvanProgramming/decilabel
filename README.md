@@ -1,13 +1,13 @@
 # DeciLabel
 
-DeciLabel classifies GitHub Issues and pull requests with a typed Decisions API, then adds only labels supported by the available evidence. Use OpenRouter (the default) or Jev through TypeSafe's direct API. It never removes, replaces, or creates labels. It runs as a Node 24 GitHub Action and includes its dependencies in `dist/index.js`.
+DeciLabel classifies GitHub Issues and pull requests with a typed Decisions API, then adds only labels supported by the available evidence. Use OpenRouter (the default), Jev through TypeSafe's direct API, or GPT-6 Luna through OpenAI's direct API. It never removes, replaces, or creates labels. It runs as a Node 24 GitHub Action and includes its dependencies in `dist/index.js`.
 
 ## Quick start
 
 ### Install and configure
 
-1. In the repository you want DeciLabel to label, open **Settings → Secrets and variables → Actions → New repository secret**. Add either `OPENROUTER_API_KEY` or `TYPESAFE_API_KEY` with a key from the provider you plan to use.
-2. Copy [the minimal workflow](examples/minimal.yml) into `.github/workflows/decilabel.yml`. It uses the published `EvanProgramming/decilabel@v1.0.0` action, listens to new and updated Issues and pull requests, and requests only the label-write permissions it needs.
+1. In the repository you want DeciLabel to label, open **Settings → Secrets and variables → Actions → New repository secret**. Add `OPENROUTER_API_KEY`, `TYPESAFE_API_KEY`, or `OPENAI_API_KEY` for the provider you plan to use.
+2. Copy [the minimal workflow](examples/minimal.yml) into `.github/workflows/decilabel.yml`. It uses the published `EvanProgramming/decilabel@v1.1.0` action, listens to new and updated Issues and pull requests, and requests only the label-write permissions it needs.
 3. Because the workflow uses `pull_request_target`, check **Settings → Actions → Policies** in public repositories and allow the DeciLabel workflow's required events. Review actor restrictions for outside contributors and any inherited organization or enterprise policies. A policy-blocked workflow never starts, so check Actions policy insights if no run appears.
 4. Confirm the target repository already has the labels you want DeciLabel to select. The action never creates labels.
 5. Commit the workflow. Open or update an Issue or pull request; then view the **DeciLabel** run under the repository's **Actions** tab. The run summary explains labels selected, added, or rejected.
@@ -20,7 +20,9 @@ typesafe-api-key: ${{ secrets.TYPESAFE_API_KEY }}
 model: typesafe/jev-1.13
 ```
 
-The `@v1.0.0` reference stays on this release. To receive compatible fixes automatically, use `@v1`; for stronger supply-chain pinning, use the full commit SHA shown on the [v1.0.0 release page](https://github.com/EvanProgramming/decilabel/releases/tag/v1.0.0). On public repositories, check the workflow execution policies below if a run does not start.
+To call OpenAI's Decisions API directly, use `provider: openai`, set `openai-api-key: ${{ secrets.OPENAI_API_KEY }}`, and set `model: gpt-6-luna` (the default for this provider). OpenRouter accepts any non-empty Decisions model ID and lets its endpoint validate support. The OpenAI Decisions API is in public beta and currently supports only `gpt-6-luna`.
+
+The `@v1.1.0` reference stays on this release. To receive compatible fixes automatically, use `@v1`; for stronger supply-chain pinning, use the full commit SHA shown on the [v1.1.0 release page](https://github.com/EvanProgramming/decilabel/releases/tag/v1.1.0). On public repositories, check the workflow execution policies below if a run does not start.
 
 The workflow handles these events:
 
@@ -35,25 +37,26 @@ A policy-blocked workflow never starts, so DeciLabel cannot report the block fro
 
 ## Models and decisions
 
-The default `provider: openrouter` supports model IDs `typesafe/jev-1.13` and `microsoft/microsoft-decision-1` through `POST https://openrouter.ai/api/alpha/decisions`. Set `provider: typesafe` to call TypeSafe's direct `POST https://api.typesafe.ai/v1/systemone` API with the `typesafe-api-key` secret; this provider uses TypeSafe's `jev-latest` alias and supports Jev only. Both APIs use the same typed Decisions request and answer contract. Neither path calls chat/completions. DeciLabel asks a Noul yes-probability question for each independent candidate label. For each unoccupied exclusive group, it asks one Choice question with an internal none option. Labels and descriptions are inserted as data, not as executable instructions; only internal question and option IDs can map a response to a repository label.
+The default `provider: openrouter` sends model IDs to `POST https://openrouter.ai/api/alpha/decisions`; the endpoint determines which IDs it supports. Set `provider: typesafe` to call TypeSafe's direct `POST https://api.typesafe.ai/v1/systemone` API with the `typesafe-api-key` secret; this provider uses TypeSafe's `jev-latest` alias and supports Jev only. Set `provider: openai` to call OpenAI's `POST https://api.openai.com/v1/decisions` API with the `openai-api-key` secret; its only currently supported model is `gpt-6-luna`. OpenAI uses named questions and an answer array, which DeciLabel maps to its existing typed Decisions contract. None of these paths calls chat/completions. DeciLabel asks a Noul yes-probability question for each independent candidate label. For each unoccupied exclusive group, it asks one Choice question with an internal none option. Labels and descriptions are inserted as data, not as executable instructions; only internal question and option IDs can map a response to a repository label.
 
 Noul uses the probability of yes. Choice requires a complete probability distribution, a winning option, the configured threshold, and at least a `0.20` margin over the next option. Choice confidence is reported separately when supplied; it is not treated as the winning probability. Missing, malformed, unsupported, or uncertain answers abstain.
 
-The generic Action default remains `0.67`; it has not been jointly calibrated for both providers. Three live Jev runs on a real labeled holdout found `0.91` yields more labels while retaining at least 80% observed precision on each run. The repository's direct-TypeSafe workflow uses `0.91`; expect lower precision than the previous `0.92` setting in exchange for higher coverage. This result is specific to Jev and one repository taxonomy. See the [calibration report](docs/calibration-report.md) for the examples, threshold-selection rule, run metrics, and limitations. The read-only `Jev calibration` workflow can repeat the evaluation with the configured `TYPESAFE_API_KEY`; each run retains only labels, probabilities, public item links, and aggregate metrics as a 30-day artifact.
+The generic Action default remains `0.67`; it has not been jointly calibrated across providers and is uncalibrated for GPT-6 Luna. Three live Jev runs on a real labeled holdout found `0.91` yields more labels while retaining at least 80% observed precision on each run. The repository's direct-TypeSafe workflow uses `0.91`; expect lower precision than the previous `0.92` setting in exchange for higher coverage. This result is specific to Jev and one repository taxonomy. See the [calibration report](docs/calibration-report.md) for the examples, threshold-selection rule, run metrics, and limitations. The read-only `Jev calibration` workflow can repeat the evaluation with the configured `TYPESAFE_API_KEY`; each run retains only labels, probabilities, public item links, and aggregate metrics as a 30-day artifact.
 
 Model context figures conflict across provider materials. OpenRouter's Jev guide and catalog report 32,000 tokens; TypeSafe's model page reports 64,000 total with 32,000 for state plus the longest question. Microsoft Decision 1's catalog reports a 32,768-token context. DeciLabel records these provider statements separately rather than resolving the Jev discrepancy. Application limits are smaller and explicit: 100 candidate labels, 16 questions per request, eight Choice options including none, 16 KB serialized state, 24 KB serialized request, 15-second request timeout, no more than three attempts for transient/network failures, and a 120-second overall Decisions deadline. Requests are split deterministically; when there are over 100 candidates, use `include-labels` to narrow them.
 
-References: [OpenRouter Decisions examples and Jev limits](https://openrouter.ai/blog/insights/what-is-jev/), [TypeSafe model limits](https://docs.typesafe.ai/models), and [Microsoft Decision 1 catalog](https://openrouter.ai/microsoft/microsoft-decision-1).
+References: [OpenAI Decisions API](https://developers.openai.com/api/docs/guides/decisions), [OpenRouter GPT-6 Luna Decisions](https://openrouter.ai/openai/gpt-6-luna-decisions), [OpenRouter Decisions examples and Jev limits](https://openrouter.ai/blog/insights/what-is-jev/), [TypeSafe model limits](https://docs.typesafe.ai/models), and [Microsoft Decision 1 catalog](https://openrouter.ai/microsoft/microsoft-decision-1).
 
 ## Inputs
 
 | Input                | Default               | Meaning                                                                                                                                                  |
 | -------------------- | --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `openrouter-api-key` | OpenRouter only       | Required when `provider` is `openrouter`; sent only as a bearer token to OpenRouter.                                                                     |
-| `provider`           | `openrouter`          | Decisions API provider: `openrouter` or `typesafe`.                                                                                                      |
+| `provider`           | `openrouter`          | Decisions API provider: `openrouter`, `typesafe`, or `openai`.                                                                                           |
 | `typesafe-api-key`   | required for TypeSafe | TypeSafe secret; sent only as a bearer token to `api.typesafe.ai`.                                                                                       |
+| `openai-api-key`     | required for OpenAI   | OpenAI secret; sent only as a bearer token to `api.openai.com`.                                                                                          |
 | `github-token`       | `${{ github.token }}` | Token used to read the item and add labels.                                                                                                              |
-| `model`              | `typesafe/jev-1.13`   | OpenRouter model ID. TypeSafe mode accepts the default Jev ID and sends TypeSafe's `jev-latest` alias.                                                   |
+| `model`              | provider-specific     | OpenRouter model ID (default `typesafe/jev-1.13`), TypeSafe Jev ID (`typesafe/jev-1.13`), or OpenAI `gpt-6-luna` (default for OpenAI).                   |
 | `threshold`          | `0.67`                | Probability threshold from 0 through 1.                                                                                                                  |
 | `max-labels`         | `3`                   | Maximum eligible labels present after this run, counting existing eligible labels. Existing labels are preserved even if they already exceed this limit. |
 | `include-labels`     | `[]`                  | Optional JSON array of existing repository label names. Empty means all eligible labels.                                                                 |
@@ -79,14 +82,14 @@ Pull request context contains title and body, changed-file counts, rename metada
 
 Outputs are JSON strings for `selected-labels`, `added-labels`, and `results`, plus `status` and `skip-reason`. Each result carries its probability when available, optional provider confidence, PR coverage warnings, and a deterministic acceptance/rejection reason. `selected-labels` is the policy result; `added-labels` contains only labels actually submitted to GitHub. In dry-run mode no labels are added.
 
-Issue/PR title, body, and available PR diff excerpts are sent to the selected provider (OpenRouter or TypeSafe) for classification. Do not use this Action for repositories whose content must not be sent to that provider. The Action does not log or include bodies, diffs, credentials, or raw provider payloads in the run summary; summaries contain status, selected labels, and sanitized result rows. Provider API keys are never written to outputs. There is no persistent classification store.
+Issue/PR title, body, and available PR diff excerpts are sent to the selected provider (OpenRouter, TypeSafe, or OpenAI) for classification. Do not use this Action for repositories whose content must not be sent to that provider. The Action does not log or include bodies, diffs, credentials, or raw provider payloads in the run summary; summaries contain status, selected labels, and sanitized result rows. Provider API keys are never written to outputs. There is no persistent classification store.
 
 The `pull_request_target` workflow is intentionally small and does not check out pull request code, install dependencies, restore caches, or execute contributor scripts. Limit workflow permissions to the labels the Action needs, pin the Action to a verified commit SHA, and protect the secret and workflow file with repository policy.
 
 ## Troubleshooting
 
 - **No run appears:** inspect Settings → Actions → Policies and inherited restrictions; an execution-policy block happens before the Action starts.
-- **401/403 or permissions error:** verify the selected provider's secret (`OPENROUTER_API_KEY` or `TYPESAFE_API_KEY`), GitHub token permissions, and outside-contributor actor policy. Error bodies are intentionally not printed because they may contain request data.
+- **401/403 or permissions error:** verify the selected provider's secret (`OPENROUTER_API_KEY`, `TYPESAFE_API_KEY`, or `OPENAI_API_KEY`), GitHub token permissions, and outside-contributor actor policy. Error bodies are intentionally not printed because they may contain request data.
 - **Unknown label or invalid groups:** compare configured names with current repository labels; names are case-insensitive, but all must exist.
 - **No labels selected:** inspect the summary's threshold and rejection reasons, exclusions, existing labels, groups, and PR coverage warnings. Try dry-run when changing a taxonomy.
 - **History unavailable:** no labels are written when GitHub cannot provide complete, well-formed label history; check GraphQL access and retry the workflow.

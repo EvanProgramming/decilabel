@@ -1,8 +1,8 @@
 import * as core from "@actions/core";
-import { MODEL_LIMITS } from "./decisions.js";
+import type { DecisionProvider } from "./types.js";
 
 export interface Config {
-  provider: "openrouter" | "typesafe";
+  provider: DecisionProvider;
   apiKey: string;
   token: string;
   model: string;
@@ -14,7 +14,6 @@ export interface Config {
   dryRun: boolean;
 }
 
-const supported = new Set(Object.keys(MODEL_LIMITS));
 export const DEFAULT_EXCLUDES = [
   "duplicate",
   "invalid",
@@ -44,21 +43,30 @@ export function parseConfig(
   bool: (name: string) => boolean,
 ): Config {
   const provider = input("provider") || "openrouter";
-  if (provider !== "openrouter" && provider !== "typesafe")
-    throw new Error("provider must be openrouter or typesafe.");
-  const apiKey = input(
-    provider === "typesafe" ? "typesafe-api-key" : "openrouter-api-key",
-  );
+  if (
+    provider !== "openrouter" &&
+    provider !== "typesafe" &&
+    provider !== "openai"
+  )
+    throw new Error("provider must be openrouter, typesafe, or openai.");
+  const keyInput =
+    provider === "typesafe"
+      ? "typesafe-api-key"
+      : provider === "openai"
+        ? "openai-api-key"
+        : "openrouter-api-key";
+  const apiKey = input(keyInput);
   const token = input("github-token") || process.env.GITHUB_TOKEN || "";
   if (!apiKey)
-    throw new Error(
-      `${provider === "typesafe" ? "typesafe-api-key" : "openrouter-api-key"} is required when provider is ${provider}.`,
-    );
+    throw new Error(`${keyInput} is required when provider is ${provider}.`);
   if (!token) throw new Error("github-token is required.");
-  const model = input("model") || "typesafe/jev-1.13";
-  if (!supported.has(model)) throw new Error(`Unsupported model: ${model}`);
+  const model =
+    input("model") ||
+    (provider === "openai" ? "gpt-6-luna" : "typesafe/jev-1.13");
   if (provider === "typesafe" && model !== "typesafe/jev-1.13")
     throw new Error("The TypeSafe provider only supports Jev.");
+  if (provider === "openai" && model !== "gpt-6-luna")
+    throw new Error("The OpenAI provider only supports gpt-6-luna.");
   const threshold = Number(input("threshold") || "0.67");
   if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1)
     throw new Error("threshold must be a number from 0 to 1.");

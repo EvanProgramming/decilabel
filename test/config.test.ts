@@ -8,7 +8,7 @@ const parse = (values: Record<string, string>) =>
   );
 
 describe("configuration", () => {
-  it("uses documented defaults and supported model IDs", () => {
+  it("uses the documented default provider and model", () => {
     const config = parse({
       "openrouter-api-key": "key",
       "github-token": "token",
@@ -18,13 +18,6 @@ describe("configuration", () => {
     expect(config.threshold).toBe(0.67);
     expect(config.maxLabels).toBe(3);
     expect(config.exclude).toEqual([]);
-    expect(() =>
-      parse({
-        "openrouter-api-key": "key",
-        "github-token": "token",
-        model: "provider/unknown",
-      }),
-    ).toThrow(/Unsupported model/);
   });
 
   it("accepts TypeSafe credentials for Jev and rejects unsupported models", () => {
@@ -46,6 +39,36 @@ describe("configuration", () => {
         model: "microsoft/microsoft-decision-1",
       }),
     ).toThrow(/only supports Jev/);
+  });
+
+  it("defaults direct OpenAI to GPT-6 Luna and passes OpenRouter model IDs through", () => {
+    const openai = parse({
+      provider: "openai",
+      "openai-api-key": "openai-key",
+      "github-token": "token",
+    });
+    expect(openai.provider).toBe("openai");
+    expect(openai.apiKey).toBe("openai-key");
+    expect(openai.model).toBe("gpt-6-luna");
+    expect(() =>
+      parse({ provider: "openai", "github-token": "token" }),
+    ).toThrow(/openai-api-key/);
+    expect(() =>
+      parse({
+        provider: "openai",
+        "openai-api-key": "key",
+        "github-token": "token",
+        model: "openai/gpt-6-luna-decisions",
+      }),
+    ).toThrow(/only supports gpt-6-luna/);
+
+    expect(
+      parse({
+        "openrouter-api-key": "key",
+        "github-token": "token",
+        model: "vendor/new-decision-model",
+      }).model,
+    ).toBe("vendor/new-decision-model");
   });
 
   it("rejects bad limits, malformed arrays, and overlapping groups", () => {

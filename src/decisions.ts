@@ -1,18 +1,14 @@
-import type { DecisionAnswer, DecisionQuestion } from "./types.js";
+import type {
+  DecisionAnswer,
+  DecisionProvider,
+  DecisionQuestion,
+} from "./types.js";
 
 export interface Question extends DecisionQuestion {
   text: string;
   criteria?: Record<string, string>;
 }
 
-export const MODEL_LIMITS = {
-  "typesafe/jev-1.13": {
-    openRouterContext: 32768,
-    typeSafeTotal: 65536,
-    typeSafeStatePlusLongestQuestion: 32768,
-  },
-  "microsoft/microsoft-decision-1": { providerContext: 32768 },
-} as const;
 const MAX_LABELS = 100;
 const MAX_QUESTIONS = 16;
 const MAX_CHOICES = 8;
@@ -20,6 +16,7 @@ const MAX_STATE = 16 * 1024;
 const MAX_REQUEST = 24 * 1024;
 const URL = "https://openrouter.ai/api/alpha/decisions";
 const TYPESAFE_URL = "https://api.typesafe.ai/v1/systemone";
+const OPENAI_URL = "https://api.openai.com/v1/decisions";
 
 export function buildQuestions(
   labels: { id: string; name: string; description: string }[],
@@ -104,10 +101,47 @@ export function batchQuestions(questions: Question[]): Question[][] {
 }
 
 interface ApiPayload {
-  answers?: Record<string, unknown>;
+  answers?: unknown;
 }
 const transient = (status: number) => status === 429 || status >= 500;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+function normalizeOpenAIAnswers(raw: unknown): Record<string, unknown> {
+  if (!Array.isArray(raw))
+    throw new Error("Decisions provider returned a malformed response.");
+  const answers: Record<string, unknown> = {};
+  for (const answer of raw) {
+    if (!answer || typeof answer !== "object") continue;
+    const item = answer as Record<string, unknown>;
+    if (typeof item.name !== "string") continue;
+    if (item.type === "predicate" && typeof item.probability === "number")
+      answers[item.name] = { type: "noul", noul: item.probability };
+    if (item.type === "choice" && typeof item.choice === "string") {
+      const probabilities = Array.isArray(item.probabilities)
+        ? Object.fromEntries(
+            item.probabilities
+              .filter(
+                (value): value is { value: string; probability: number } =>
+                  Boolean(value) &&
+                  typeof value === "object" &&
+                  typeof value.value === "string" &&
+                  typeof value.probability === "number",
+              )
+              .map(({ value, probability }) => [value, probability]),
+          )
+        : undefined;
+      answers[item.name] = {
+        type: "choice",
+        choice: item.choice,
+        ...(probabilities ? { probabilities } : {}),
+        ...(typeof item.confidence === "number"
+          ? { confidence: item.confidence }
+          : {}),
+      };
+    }
+  }
+  return answers;
+}
 
 export async function callDecisions(
   model: string,
@@ -116,7 +150,7 @@ export async function callDecisions(
   apiKey: string,
   fetcher: typeof fetch = fetch,
   deadline = Date.now() + 120_000,
-  provider: "openrouter" | "typesafe" = "openrouter",
+  provider: DecisionProvider = "openrouter",
 ): Promise<Record<string, DecisionAnswer | undefined>> {
   const stateText = JSON.stringify(state);
   if (new TextEncoder().encode(stateText).length > MAX_STATE)
@@ -125,17 +159,37 @@ export async function callDecisions(
     throw new Error(
       "A Decisions request exceeds the 16-question application limit.",
     );
-  const requestQuestions = Object.fromEntries(
-    questions.map(({ id, type, text, criteria }) => [
-      id,
-      { type, instructions: text, ...(criteria ? { criteria } : {}) },
-    ]),
-  );
-  const payload = {
-    model: provider === "typesafe" ? "jev-latest" : model,
-    state: stateText,
-    questions: requestQuestions,
-  };
+  const requestQuestions =
+    provider === "openai"
+      ? questions.map(({ id, type, text, criteria }) => ({
+          type: type === "noul" ? "predicate" : "choice",
+          name: id,
+          instructions: text,
+          ...(criteria
+            ? {
+                choices: Object.entries(criteria).map(
+                  ([value, description]) => ({
+                    value,
+                    description,
+                  }),
+                ),
+              }
+            : {}),
+        }))
+      : Object.fromEntries(
+          questions.map(({ id, type, text, criteria }) => [
+            id,
+            { type, instructions: text, ...(criteria ? { criteria } : {}) },
+          ]),
+        );
+  const payload =
+    provider === "openai"
+      ? { model, input: stateText, questions: requestQuestions }
+      : {
+          model: provider === "typesafe" ? "jev-latest" : model,
+          state: stateText,
+          questions: requestQuestions,
+        };
   const serialized = JSON.stringify(payload);
   if (new TextEncoder().encode(serialized).length > MAX_REQUEST)
     throw new Error(
@@ -147,7 +201,11 @@ export async function callDecisions(
     if (remaining <= 0) throw new Error("Decisions request deadline exceeded.");
     try {
       const response = await fetcher(
-        provider === "typesafe" ? TYPESAFE_URL : URL,
+        provider === "typesafe"
+          ? TYPESAFE_URL
+          : provider === "openai"
+            ? OPENAI_URL
+            : URL,
         {
           method: "POST",
           headers: {
@@ -192,12 +250,16 @@ export async function callDecisions(
         !data ||
         typeof data.answers !== "object" ||
         data.answers === null ||
-        Array.isArray(data.answers)
+        (provider !== "openai" && Array.isArray(data.answers))
       )
         throw new Error("Decisions provider returned a malformed response.");
+      const rawAnswers =
+        provider === "openai"
+          ? normalizeOpenAIAnswers(data.answers)
+          : (data.answers as Record<string, unknown>);
       const answers: Record<string, DecisionAnswer | undefined> = {};
       for (const question of questions) {
-        const raw = data.answers[question.id];
+        const raw = rawAnswers[question.id];
         if (!raw || typeof raw !== "object") continue;
         const obj = raw as Record<string, unknown>;
         const confidence =

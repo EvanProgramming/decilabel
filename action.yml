@@ -1,6 +1,6 @@
 name: DeciLabel
 author: Evan Gong
-description: Automatically add evidence-supported labels to GitHub Issues and pull requests with Jev or Microsoft Decision 1.
+description: Add evidence-supported GitHub labels using OpenAI GPT-6 Luna or Decisions models from OpenRouter and TypeSafe.
 branding:
   icon: tag
   color: blue
@@ -11,8 +11,11 @@ inputs:
   typesafe-api-key:
     description: TypeSafe API key when provider is typesafe.
     required: false
+  openai-api-key:
+    description: OpenAI API key when provider is openai.
+    required: false
   provider:
-    description: Decisions API provider (openrouter or typesafe).
+    description: Decisions API provider (openrouter, typesafe, or openai).
     required: false
     default: openrouter
   github-token:
@@ -20,9 +23,8 @@ inputs:
     required: true
     default: ${{ github.token }}
   model:
-    description: Supported Decisions model.
+    description: OpenRouter model ID, typesafe/jev-1.13 for TypeSafe, or gpt-6-luna for OpenAI.
     required: false
-    default: typesafe/jev-1.13
   threshold:
     description: Minimum Noul yes probability or Choice winning-option probability.
     required: false

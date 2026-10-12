@@ -1,7 +1,7 @@
 {
   "name": "decilabel",
-  "version": "1.0.0",
-  "description": "Automatically add evidence-supported GitHub labels with Jev or Microsoft Decision 1",
+  "version": "1.1.0",
+  "description": "Automatically add evidence-supported GitHub labels with OpenAI GPT-6 Luna and Decisions providers",
   "license": "MIT",
   "private": false,
   "type": "module",

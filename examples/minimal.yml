@@ -15,6 +15,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:
-      - uses: EvanProgramming/decilabel@v1.0.0
+      - uses: EvanProgramming/decilabel@v1.1.0
         with:
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}

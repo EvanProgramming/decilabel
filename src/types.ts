@@ -4,6 +4,8 @@ export interface Label {
   description: string;
 }
 
+export type DecisionProvider = "openrouter" | "typesafe" | "openai";
+
 export interface DecisionQuestion {
   id: string;
   type: "noul" | "choice";

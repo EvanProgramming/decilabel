@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import {
-  MODEL_LIMITS,
   batchQuestions,
   buildQuestions,
   callDecisions,
@@ -14,16 +13,6 @@ const labels: Label[] = Array.from({ length: 20 }, (_, i) => ({
 }));
 
 describe("Decisions contract", () => {
-  it("requires a capability record for each supported model", () => {
-    expect(MODEL_LIMITS["typesafe/jev-1.13"]).toMatchObject({
-      openRouterContext: 32768,
-      typeSafeTotal: 65536,
-      typeSafeStatePlusLongestQuestion: 32768,
-    });
-    expect(MODEL_LIMITS["microsoft/microsoft-decision-1"]).toMatchObject({
-      providerContext: 32768,
-    });
-  });
   it("splits candidates deterministically into at most 16 questions per request", () => {
     const questions = labels.map((label, i) => ({
       id: `q${i}`,
@@ -173,6 +162,130 @@ describe("Decisions contract", () => {
     );
   });
 
+  it("maps typed questions to OpenAI Decisions and normalizes its answer array", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(new Response("", { status: 503 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            answers: [
+              { type: "predicate", name: "q1", probability: 0.81 },
+              {
+                type: "choice",
+                name: "q2",
+                choice: "o0",
+                probabilities: [
+                  { value: "o0", probability: 0.8 },
+                  { value: "none", probability: 0.2 },
+                ],
+                confidence: 0.9,
+              },
+            ],
+          }),
+          { status: 200 },
+        ),
+      );
+    const answers = await callDecisions(
+      "gpt-6-luna",
+      { title: "x" },
+      [
+        { id: "q1", type: "noul", labelIds: ["id0"], text: "supports label" },
+        {
+          id: "q2",
+          type: "choice",
+          labelIds: ["id0"],
+          noneId: "none",
+          optionToLabel: { o0: "id0" },
+          criteria: { o0: "bug", none: "none" },
+          text: "choose",
+        },
+      ],
+      "secret",
+      fetcher,
+      Date.now() + 10_000,
+      "openai",
+    );
+
+    expect(answers).toEqual({
+      q1: { type: "noul", noul: 0.81 },
+      q2: {
+        type: "choice",
+        choice: "o0",
+        probabilities: { o0: 0.8, none: 0.2 },
+        confidence: 0.9,
+      },
+    });
+    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledWith(
+      "https://api.openai.com/v1/decisions",
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer secret" }),
+      }),
+    );
+    const body = JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body));
+    expect(body).toEqual({
+      model: "gpt-6-luna",
+      input: '{"title":"x"}',
+      questions: [
+        { type: "predicate", name: "q1", instructions: "supports label" },
+        {
+          type: "choice",
+          name: "q2",
+          instructions: "choose",
+          choices: [
+            { value: "o0", description: "bug" },
+            { value: "none", description: "none" },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("treats OpenAI refusals and omitted answers as abstentions", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          answers: [{ type: "refusal", name: "q1" }],
+        }),
+        { status: 200 },
+      ),
+    );
+    const answers = await callDecisions(
+      "gpt-6-luna",
+      {},
+      [
+        { id: "q1", type: "noul", labelIds: ["id0"], text: "supports" },
+        { id: "q2", type: "noul", labelIds: ["id1"], text: "supports" },
+      ],
+      "secret",
+      fetcher,
+      undefined,
+      "openai",
+    );
+    expect(answers.q1).toBeUndefined();
+    expect(answers.q2).toBeUndefined();
+  });
+
+  it("rejects malformed OpenAI answer payloads without exposing response data", async () => {
+    const fetcher = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ answers: {} }), { status: 200 }),
+      );
+    await expect(
+      callDecisions(
+        "gpt-6-luna",
+        {},
+        [{ id: "q", type: "noul", labelIds: ["id0"], text: "supports" }],
+        "secret",
+        fetcher,
+        undefined,
+        "openai",
+      ),
+    ).rejects.toThrow(/malformed response/);
+  });
+
   it("retries transient responses at most three times and stops on malformed responses", async () => {
     const question = [
       { id: "q", type: "noul" as const, labelIds: ["id0"], text: "supports" },
@@ -201,7 +314,9 @@ describe("Decisions contract", () => {
     expect(retrying).toHaveBeenCalledTimes(3);
     const malformed = vi
       .fn<typeof fetch>()
-      .mockResolvedValue(new Response("{}", { status: 200 }));
+      .mockResolvedValue(
+        new Response(JSON.stringify({ answers: [] }), { status: 200 }),
+      );
     await expect(
       callDecisions("typesafe/jev-1.13", {}, question, "secret", malformed),
     ).rejects.toThrow(/malformed/);
